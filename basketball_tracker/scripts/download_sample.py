@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add parent directory to path for config import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 
@@ -37,7 +36,7 @@ def download_video(
         url: YouTube URL
         output_dir: Directory to save video
         filename: Output filename (without extension)
-        resolution: Maximum resolution (e.g., '720', '480')
+        resolution: Maximum resolution
     
     Returns:
         Path to downloaded video
@@ -63,7 +62,6 @@ def download_video(
         print(f"Download failed: {e}")
         sys.exit(1)
     
-    # Find the downloaded file
     for ext in ["mp4", "mkv", "webm"]:
         output_path = output_dir / f"{filename}.{ext}"
         if output_path.exists():
@@ -109,13 +107,11 @@ def main():
     """Main entry point."""
     args = parse_args()
     
-    # Check yt-dlp is installed
     if not check_ytdlp_installed():
         print("Error: yt-dlp is not installed.")
         print("Install with: pip install yt-dlp")
         sys.exit(1)
     
-    # Download video
     output_dir = Path(args.output)
     
     try:
@@ -127,7 +123,7 @@ def main():
         )
         print(f"\nDownload complete: {output_path}")
         print(f"\nRun tracker with:")
-        print(f"  python main.py --input {output_path}")
+        print(f"  python main.py --input {output_path} --interactive")
         
     except Exception as e:
         print(f"Error: {e}")

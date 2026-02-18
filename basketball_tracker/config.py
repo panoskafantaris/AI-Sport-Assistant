@@ -14,18 +14,20 @@ SAMPLES_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
 
 
-# Detection settings
-DETECTION_MODEL = "yolov8n.pt"  # nano model, fast. Options: yolov8n/s/m/l/x
-DETECTION_CONFIDENCE = 0.5
-DETECTION_IOU_THRESHOLD = 0.45
+# Detection settings - tuned for crowded basketball scenes
+DETECTION_MODEL = "yolov8s.pt"  # Small model, better accuracy than nano
+DETECTION_CONFIDENCE = 0.3      # Lower threshold to catch occluded players
+DETECTION_IOU_THRESHOLD = 0.3   # Lower IOU to allow more overlapping boxes
 PERSON_CLASS_ID = 0  # COCO class ID for 'person'
+DETECTION_IMG_SIZE = 1280       # Higher resolution for better small object detection
 
 
-# Tracking settings
-TRACKER_TYPE = "bytetrack"  # Options: bytetrack, botsort
-TRACK_HIGH_THRESH = 0.5
+# Tracking settings - tuned for crowded scenes
+TRACKER_TYPE = "bytetrack"
+TRACK_HIGH_THRESH = 0.4         # Lower for crowded scenes
 TRACK_LOW_THRESH = 0.1
-TRACK_BUFFER = 30  # Frames to keep lost tracks
+TRACK_BUFFER = 50               # Longer buffer to recover lost tracks
+TRACK_MATCH_THRESH = 0.85       # Higher threshold for more stable associations
 
 
 # Video processing settings
@@ -41,7 +43,7 @@ FONT_THICKNESS = 2
 
 
 # Download settings
-DEFAULT_SAMPLE_URL = "https://www.youtube.com/watch?v=6OBFpgXJLXk"  # Basketball highlights
+DEFAULT_SAMPLE_URL = "https://www.youtube.com/watch?v=6OBFpgXJLXk"
 DOWNLOAD_FORMAT = "mp4"
 DOWNLOAD_RESOLUTION = "720"
 
@@ -64,3 +66,11 @@ MIN_SAMPLES_FOR_CLUSTERING = 6       # Minimum players needed to cluster
 # Scene change detection
 SCENE_CHANGE_THRESHOLD = 0.4         # Histogram difference threshold (0-1)
 SCENE_CHANGE_COOLDOWN = 15           # Frames to wait after scene change
+
+
+# Interactive calibration settings
+INTERACTIVE_WINDOW_NAME = "Basketball Tracker - Calibration"
+INTERACTIVE_WINDOW_WIDTH = 1280
+INTERACTIVE_WINDOW_HEIGHT = 720
+CLICK_TOLERANCE = 10                  # Pixels tolerance for click detection
+REFERENCE_COLORS_FILE = "color_references.json"  # Save/load calibration

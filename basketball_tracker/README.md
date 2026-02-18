@@ -60,7 +60,11 @@ python main.py -i game.mp4
 python main.py -i game.mp4 --skip 2
 
 # Process first 100 frames only
-python main.py -i samples/basketball_sample.f398.mp4 --max-frames 100
+python main.py -i samples/game.mp4 --max-frames 100
+
+python main.py --input samples/game.mp4 --interactive --max-frames 4000
+
+python main.py --input samples/game.mp4 --load-calibration results/color_references.json --max-frames 4000
 
 # Only save JSON, no video
 python main.py -i game.mp4 --no-video

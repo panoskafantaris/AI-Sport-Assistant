@@ -7,7 +7,8 @@ from .models import (
     TrackedObject,
     FrameData,
     VideoMetadata,
-    TrackingResult
+    TrackingResult,
+    Team
 )
 from .video_loader import VideoLoader
 from .detector import Detector
@@ -23,6 +24,7 @@ __all__ = [
     "FrameData",
     "VideoMetadata",
     "TrackingResult",
+    "Team",
     "VideoLoader",
     "Detector",
     "Tracker",

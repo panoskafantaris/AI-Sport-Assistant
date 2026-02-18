@@ -47,6 +47,10 @@ class BoundingBox:
     
     def to_int_tuple(self) -> Tuple[int, int, int, int]:
         return (int(self.x1), int(self.y1), int(self.x2), int(self.y2))
+    
+    def contains_point(self, x: float, y: float) -> bool:
+        """Check if point is inside bounding box."""
+        return self.x1 <= x <= self.x2 and self.y1 <= y <= self.y2
 
 
 @dataclass

@@ -1,16 +1,23 @@
 """
 Team classification module for basketball tracker.
 
-Classifies tracked players into teams based on jersey colors.
+Two-phase calibration:
+1. Court boundary definition (click corners)
+2. Team color calibration (3 samples per team)
 """
 from .color_extractor import ColorExtractor
+from .color_reference import ColorReferenceStore, TeamColorReference
 from .scene_detector import SceneDetector
-from .team_clusterer import TeamClusterer
 from .classifier import TeamClassifier
+from .interactive_calibrator import InteractiveCalibrator
+from .court_detector import CourtDetector
 
 __all__ = [
     "ColorExtractor",
-    "SceneDetector", 
-    "TeamClusterer",
+    "ColorReferenceStore",
+    "TeamColorReference",
+    "SceneDetector",
     "TeamClassifier",
+    "InteractiveCalibrator",
+    "CourtDetector",
 ]

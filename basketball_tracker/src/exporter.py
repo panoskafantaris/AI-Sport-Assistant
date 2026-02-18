@@ -68,11 +68,10 @@ class Exporter:
         output_fps = fps if fps is not None else metadata.fps
         
         # Try multiple codecs for compatibility
-        # Order: most compatible first for Windows
         codecs = [
             config.OUTPUT_VIDEO_CODEC,  # mp4v (MPEG-4)
             "XVID",                      # Xvid
-            "MJPG",                      # Motion JPEG (larger but always works)
+            "MJPG",                      # Motion JPEG
         ]
         
         writer = None
@@ -88,7 +87,6 @@ class Exporter:
                     (metadata.width, metadata.height)
                 )
                 
-                # Test if writer actually works by checking isOpened
                 if writer.isOpened():
                     working_codec = codec
                     break
@@ -102,38 +100,20 @@ class Exporter:
         if writer is None or not writer.isOpened():
             raise RuntimeError(
                 f"Could not create video writer for {output_path}. "
-                f"Tried codecs: {codecs}. "
-                f"Try installing FFmpeg or OpenCV with video support."
+                f"Tried codecs: {codecs}."
             )
         
         print(f"Using video codec: {working_codec}")
         return writer
     
     def save_frame(self, frame: np.ndarray, filename: str) -> Path:
-        """
-        Save a single frame as image.
-        
-        Args:
-            frame: BGR image array
-            filename: Output filename
-        
-        Returns:
-            Path to saved file
-        """
+        """Save a single frame as image."""
         output_path = self.output_dir / filename
         cv2.imwrite(str(output_path), frame)
         return output_path
     
     def generate_summary(self, result: TrackingResult) -> dict:
-        """
-        Generate summary statistics from tracking results.
-        
-        Args:
-            result: TrackingResult object
-        
-        Returns:
-            Dictionary with summary statistics
-        """
+        """Generate summary statistics from tracking results."""
         if not result.frames:
             return {"error": "No frames processed"}
         
@@ -148,15 +128,13 @@ class Exporter:
                 all_track_ids.add(obj.track_id)
                 track_frame_counts[obj.track_id] = track_frame_counts.get(obj.track_id, 0) + 1
                 
-                # Track team assignment (use most recent)
                 if obj.team != Team.UNKNOWN:
                     track_teams[obj.track_id] = obj.team.name
         
-        # Count players per team (unique tracks)
+        # Count players per team
         for track_id, team_name in track_teams.items():
             team_counts[team_name] += 1
         
-        # Calculate per-frame statistics
         detections_per_frame = [len(f.tracked_objects) for f in result.frames]
         
         summary = {
@@ -196,16 +174,7 @@ class Exporter:
         result: TrackingResult, 
         filename: str = "tracking_summary.json"
     ) -> Path:
-        """
-        Export summary statistics to JSON.
-        
-        Args:
-            result: TrackingResult object
-            filename: Output filename
-        
-        Returns:
-            Path to saved file
-        """
+        """Export summary statistics to JSON."""
         summary = self.generate_summary(result)
         output_path = self.output_dir / filename
         

@@ -50,7 +50,7 @@ class Detector:
             iou=self.iou_threshold,
             device=self.device,
             verbose=False,
-            classes=[self.target_class_id]  # Filter to person class only
+            classes=[self.target_class_id]
         )
         
         return self._parse_results(results[0])
@@ -89,25 +89,3 @@ class Detector:
             detections.append(detection)
         
         return detections
-    
-    def detect_raw(self, frame: np.ndarray):
-        """
-        Run detection and return raw YOLO results.
-        
-        Useful for passing to tracker which needs raw results.
-        
-        Args:
-            frame: BGR image array
-        
-        Returns:
-            Raw YOLO results object
-        """
-        results = self.model(
-            frame,
-            conf=self.confidence_threshold,
-            iou=self.iou_threshold,
-            device=self.device,
-            verbose=False,
-            classes=[self.target_class_id]
-        )
-        return results[0]

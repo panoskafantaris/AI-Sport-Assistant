@@ -66,6 +66,26 @@ def parse_args():
         help="Suppress progress bar"
     )
     
+    # Team classification options
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Enable interactive calibration (click to identify teams/referee)"
+    )
+    
+    parser.add_argument(
+        "--no-teams",
+        action="store_true",
+        help="Disable team classification entirely"
+    )
+    
+    parser.add_argument(
+        "--load-calibration",
+        type=str,
+        default=None,
+        help="Load color calibration from file"
+    )
+    
     return parser.parse_args()
 
 
@@ -85,12 +105,25 @@ def main():
         frame_skip=args.skip,
         save_video=not args.no_video,
         save_json=not args.no_json,
-        show_progress=not args.quiet
+        show_progress=not args.quiet,
+        enable_team_classification=not args.no_teams,
+        interactive_calibration=args.interactive
     )
+    
+    # Load existing calibration if specified
+    if args.load_calibration:
+        if pipeline.team_classifier:
+            if pipeline.team_classifier.load_calibration(args.load_calibration):
+                print(f"Loaded calibration from: {args.load_calibration}")
+            else:
+                print(f"Failed to load calibration from: {args.load_calibration}")
     
     # Process video
     print(f"Processing: {args.input}")
     print(f"Output directory: {args.output}")
+    
+    if args.interactive:
+        print("Interactive mode: You will be asked to identify players")
     
     try:
         result = pipeline.process(
@@ -104,12 +137,31 @@ def main():
         print(f"Frames processed: {len(result.frames)}")
         
         unique_tracks = set()
+        team_counts = {
+            "TEAM_A": 0,
+            "TEAM_B": 0,
+            "REFEREE": 0,
+            "UNKNOWN": 0
+        }
+        
         for frame in result.frames:
             for obj in frame.tracked_objects:
-                unique_tracks.add(obj.track_id)
+                if obj.track_id not in unique_tracks:
+                    unique_tracks.add(obj.track_id)
+                    team_counts[obj.team.name] += 1
         
         print(f"Unique players tracked: {len(unique_tracks)}")
         
+        if not args.no_teams:
+            print(f"  Team A: {team_counts['TEAM_A']}")
+            print(f"  Team B: {team_counts['TEAM_B']}")
+            print(f"  Referees: {team_counts['REFEREE']}")
+            if team_counts['UNKNOWN'] > 0:
+                print(f"  Unclassified: {team_counts['UNKNOWN']}")
+        
+    except KeyboardInterrupt:
+        print("\nProcessing interrupted by user.")
+        sys.exit(0)
     except Exception as e:
         print(f"Error during processing: {e}")
         sys.exit(1)
