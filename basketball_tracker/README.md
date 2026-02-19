@@ -1,84 +1,87 @@
+# Tennis Tracker
+
+AI-powered tennis match analysis: court detection, player tracking, ball tracking, and advanced statistics.
+
+## Installation & Setup
+
+```bash
+conda create -n tennis-tracker python=3.10
+conda activate tennis-tracker
+
+# 1. Install base dependencies
+pip install -r requirements.txt
+
+# 2. Install PyTorch with CUDA 12.1  (RTX 4050 / Ada Lovelace GPU)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# CPU-only fallback (slower):
+# pip install torch torchvision
+
+# 3. Verify GPU is detected
+python models/check_gpu.py
+
+# 4. Download YOLO models
+python models/download_models.py           # required models only
+python models/download_models.py --all     # + optional pose model
+```
+
+## Downloading a Match Video
+
+```bash
+# Download 1080p (default)
+python scripts/download_sample.py -u "https://www.youtube.com/watch?v=OZz_ro54jYs"
+
+# Choose resolution and set a name
+python scripts/download_sample.py -u "https://www.youtube.com/watch?v=OZz_ro54jYs" -r 1280 -n tennis_match
+
+# See all available formats before downloading
+python scripts/download_sample.py -u "https://www.youtube.com/watch?v=OZz_ro54jYs" --list-formats
+```
+
+## GPU Notes (RTX 4050 6 GB)
+
+The app detects and uses your GPU automatically — no extra flags needed.
+
+| Setting in config.py | Value | Effect |
+|---|---|---|
+| `DEVICE` | `"cuda"` auto-detected | All YOLO models run on GPU |
+| `USE_HALF_PRECISION` | `True` | FP16 — ~2× faster, same accuracy |
+| `DETECTION_IMG_SIZE` | `1280` | Safe for 6 GB VRAM without pose |
+
+If you see CUDA OOM errors with `--pose`, lower `DETECTION_IMG_SIZE = 960` in `config.py`.
+
+```bash
+# Quick benchmark to confirm speed
+python models/check_gpu.py --benchmark
+```
+
 ## Installation
 
 ```bash
-# Clone or navigate to the project
+conda create -n tennis-tracker python=3.10
+conda activate tennis-tracker
 cd basketball_tracker
-
-conda create -n ai-sport-assistant python=3.10
-
-conda activate ai-sport-assistant
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
 ## Quick Start
 
-### 1. Download a sample video
-
 ```bash
-python scripts/download_sample.py
+# Singles match – interactive court calibration
+python main.py -i samples/tennis_match_2.mp4 --max-frames 3000
 
-# Or with a custom YouTube URL
-python scripts/download_sample.py --url "https://www.youtube.com/watch?v=HYMDxPO0L3M"
-```
+# Doubles, with pose/kinesiology, process every other frame
+python main.py -i samples/tennis_match.mp4 --doubles --pose --skip 1
 
-### 2. Run the tracker
+# Skip interactive calibration (auto line-detection only)
+python main.py -i samples/tennis_match.mp4 --no-court-cal
 
-```bash
-python main.py --input samples/basketball_sample.f398.mp4 --output results/
-```
+# Fast preview (first 200 frames, no output files)
+python main.py -i samples/tennis_match.mp4 --max-frames 200 --no-video --no-json
 
-## Usage
 
-### Basic usage
-
-```bash
-python main.py --input VIDEO_PATH --output OUTPUT_DIR
-```
-
-### Options
-
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--input` | `-i` | Input video path | Required |
-| `--output` | `-o` | Output directory | `results/` |
-| `--name` | `-n` | Base name for outputs | Input filename |
-| `--skip` | `-s` | Frames to skip | 0 (process all) |
-| `--max-frames` | `-m` | Max frames to process | All |
-| `--no-video` | | Don't save annotated video | False |
-| `--no-json` | | Don't save JSON data | False |
-| `--quiet` | `-q` | Hide progress bar | False |
-
-### Examples
-
-```bash
-# Process entire video
-python main.py -i game.mp4
-
-# Process every 3rd frame (faster)
-python main.py -i game.mp4 --skip 2
-
-# Process first 100 frames only
-python main.py -i samples/game.mp4 --max-frames 100
-
-python main.py --input samples/game.mp4 --interactive --max-frames 4000
-
-python main.py --input samples/game.mp4 --load-calibration results/color_references.json --max-frames 4000
-
-# Only save JSON, no video
-python main.py -i game.mp4 --no-video
-```
-
-## Running Tests
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ -v --cov=src
-
-# Run specific test file
-pytest tests/test_pipeline.py -v
+# Analyse the specific frames that look wrong
+python scripts/debug_court.py -i samples/tennis_match.mp4 -f 70 --interactive
+python scripts/debug_court.py -i samples/tennis_match.mp4 -f 210 --interactive
+python scripts/debug_court.py -i samples/tennis_match.mp4 -f 1170 --interactive
 ```

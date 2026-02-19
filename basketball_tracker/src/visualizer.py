@@ -1,150 +1,125 @@
 """
-Visualization utilities for drawing annotations on frames.
+Visualizer – draws all analysis overlays onto video frames.
+
+Separate draw methods for each phase keep this file readable.
 """
+from __future__ import annotations
+from typing import List, Optional
 import cv2
 import numpy as np
-from typing import Dict, List, Tuple, Optional
 
-from .models import Detection, TrackedObject, Team
+from .models.player import Player, PlayerRole
+from .models.ball   import Ball, LandingEstimate, BallStatus
+from .models.court  import CourtBoundary
 import config
 
-
-# Default team colors (BGR format for OpenCV)
-DEFAULT_TEAM_COLORS = {
-    Team.TEAM_A: (255, 100, 100),    # Light blue
-    Team.TEAM_B: (100, 100, 255),    # Light red
-    Team.REFEREE: (128, 128, 128),   # Gray
-    Team.UNKNOWN: (200, 200, 200),   # Light gray
+_ROLE_COLORS = {
+    PlayerRole.PLAYER_NEAR:  (0, 220, 50),
+    PlayerRole.PLAYER_FAR:   (255, 160, 0),
+    PlayerRole.BALL_BOY:     (180, 180, 180),
+    PlayerRole.UMPIRE:       (180, 180, 180),
+    PlayerRole.SPECTATOR:    (100, 100, 100),
+    PlayerRole.UNKNOWN:      (200, 200, 200),
+}
+_STATUS_COLORS = {
+    BallStatus.IN:      (0, 255, 80),
+    BallStatus.OUT:     (0, 0, 255),
+    BallStatus.UNKNOWN: (200, 200, 0),
 }
 
 
 class Visualizer:
-    """Draws bounding boxes with team colors on frames."""
-    
-    def __init__(
-        self,
-        box_thickness: int = config.BOX_THICKNESS,
-        font_scale: float = config.FONT_SCALE,
-        font_thickness: int = config.FONT_THICKNESS,
-        draw_trajectory: bool = True,
-        trajectory_length: int = 30
-    ):
-        self.box_thickness = box_thickness
-        self.font_scale = font_scale
-        self.font_thickness = font_thickness
-        self.draw_trajectory = draw_trajectory
-        self.trajectory_length = trajectory_length
-        self.font = cv2.FONT_HERSHEY_SIMPLEX
-        
-        # Team colors (BGR)
-        self._team_colors: Dict[Team, Tuple[int, int, int]] = DEFAULT_TEAM_COLORS.copy()
-    
-    def set_team_colors(self, colors: Dict[Team, Tuple[int, int, int]]) -> None:
-        """Set team colors from calibration (RGB → BGR)."""
-        for team, rgb in colors.items():
-            self._team_colors[team] = (rgb[2], rgb[1], rgb[0])
-    
-    def _get_team_color(self, team: Team) -> Tuple[int, int, int]:
-        """Get BGR color for team."""
-        return self._team_colors.get(team, DEFAULT_TEAM_COLORS[Team.UNKNOWN])
-    
-    def draw_detections(
-        self, 
-        frame: np.ndarray, 
-        detections: List[Detection],
-        color: Tuple[int, int, int] = (0, 255, 0)
-    ) -> np.ndarray:
-        """Draw detection boxes."""
-        annotated = frame.copy()
-        for det in detections:
-            x1, y1, x2, y2 = det.bbox.to_int_tuple()
-            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, self.box_thickness)
-        return annotated
-    
-    def draw_tracks(
-        self, 
-        frame: np.ndarray, 
-        tracked_objects: List[TrackedObject]
-    ) -> np.ndarray:
-        """Draw tracked objects with team-colored boxes."""
-        annotated = frame.copy()
-        
-        for obj in tracked_objects:
-            color = self._get_team_color(obj.team)
-            x1, y1, x2, y2 = obj.bbox.to_int_tuple()
-            
-            # Box
-            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, self.box_thickness)
-            
-            # Label
-            label = obj.team.name
-            self._draw_label(annotated, label, (x1, y1), color)
-            
-            # Trajectory
-            if self.draw_trajectory and obj.history:
-                self._draw_trajectory(annotated, obj.history, color)
-        
-        return annotated
-    
-    def _draw_label(
-        self, 
-        frame: np.ndarray, 
-        label: str,
-        position: Tuple[int, int], 
-        color: Tuple[int, int, int]
-    ) -> None:
-        """Draw label with colored background."""
-        x, y = position
-        (tw, th), baseline = cv2.getTextSize(
-            label, self.font, self.font_scale, self.font_thickness
-        )
-        
-        cv2.rectangle(frame, (x, y - th - baseline - 5), 
-                     (x + tw + 4, y), color, -1)
-        cv2.putText(frame, label, (x + 2, y - baseline - 2), 
-                   self.font, self.font_scale, (255, 255, 255), self.font_thickness)
-    
-    def _draw_trajectory(
-        self, 
-        frame: np.ndarray, 
-        history: List[Tuple[float, float]],
-        color: Tuple[int, int, int]
-    ) -> None:
-        """Draw movement trajectory."""
-        points = history[-self.trajectory_length:]
-        if len(points) < 2:
-            return
-        
-        for i in range(1, len(points)):
-            pt1 = (int(points[i - 1][0]), int(points[i - 1][1]))
-            pt2 = (int(points[i][0]), int(points[i][1]))
-            thick = max(1, int(self.box_thickness * (i / len(points))))
-            cv2.line(frame, pt1, pt2, color, thick)
-    
-    def draw_frame_info(
-        self, 
-        frame: np.ndarray, 
+
+    # ── Court ──────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def draw_court(frame: np.ndarray, court: Optional[CourtBoundary]) -> np.ndarray:
+        if court is None or not court.is_valid():
+            return frame
+        pts = court.corners.astype(np.int32)
+        cv2.polylines(frame, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
+        for i, (x, y) in enumerate(pts):
+            cv2.circle(frame, (int(x), int(y)), 6, (0, 255, 255), -1)
+            cv2.putText(frame, str(i + 1), (int(x) + 8, int(y) - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+        return frame
+
+    # ── Players ────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def draw_players(frame: np.ndarray, players: List[Player]) -> np.ndarray:
+        for p in players:
+            color = _ROLE_COLORS.get(p.role, (200, 200, 200))
+            x1, y1, x2, y2 = p.bbox.to_int_tuple()
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, config.BOX_THICKNESS)
+
+            label = f"#{p.track_id} {p.role.value.replace('_',' ')}"
+            if p.speed_ms > 0.1:
+                label += f" {p.speed_ms:.1f}m/s"
+
+            stroke = p.__dict__.get("stroke", "")
+            if stroke and stroke != "unknown":
+                label += f" [{stroke}]"
+
+            cv2.putText(frame, label, (x1, y1 - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, config.FONT_SCALE,
+                        color, config.FONT_THICKNESS)
+
+            # Draw movement trail
+            hist = p.position_history[-12:]
+            for j in range(1, len(hist)):
+                alpha = j / len(hist)
+                tc = tuple(int(c * alpha) for c in color)
+                cv2.line(frame, (int(hist[j-1][0]), int(hist[j-1][1])),
+                         (int(hist[j][0]),   int(hist[j][1])), tc, 1)
+        return frame
+
+    # ── Ball ───────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def draw_ball(frame: np.ndarray, ball: Optional[Ball]) -> np.ndarray:
+        if ball is None:
+            return frame
+        cx, cy, r = int(ball.x), int(ball.y), max(4, int(ball.radius))
+        cv2.circle(frame, (cx, cy), r, (0, 255, 255), 2)
+        cv2.circle(frame, (cx, cy), 2, (0, 200, 255), -1)
+        return frame
+
+    @staticmethod
+    def draw_landing(frame: np.ndarray, landing: Optional[LandingEstimate]) -> np.ndarray:
+        if landing is None:
+            return frame
+        color = _STATUS_COLORS.get(landing.status, (200, 200, 0))
+        px, py = int(landing.pixel_x), int(landing.pixel_y)
+        # X mark at landing point
+        d = 10
+        cv2.line(frame, (px - d, py - d), (px + d, py + d), color, 2)
+        cv2.line(frame, (px + d, py - d), (px - d, py + d), color, 2)
+        label = f"{landing.status.value.upper()} ({landing.confidence:.0%})"
+        cv2.putText(frame, label, (px + 12, py),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+        return frame
+
+    # ── Info overlay ───────────────────────────────────────────────────────────
+
+    @staticmethod
+    def draw_info(
+        frame: np.ndarray,
         frame_number: int,
-        num_tracks: int, 
-        fps: Optional[float] = None,
-        team_counts: Optional[Dict[Team, int]] = None
+        ball_speed_ms: float,
+        rally_count: int,
+        surface: str = "",
     ) -> np.ndarray:
-        """Draw frame info with team colors."""
-        annotated = frame.copy()
-        y = 30
-        
-        cv2.putText(annotated, f"Frame: {frame_number}", (10, y), 
-                   self.font, self.font_scale, (0, 255, 0), self.font_thickness)
-        y += 25
-        
-        if team_counts:
-            for team in [Team.TEAM_A, Team.TEAM_B, Team.REFEREE]:
-                count = team_counts.get(team, 0)
-                if count > 0:
-                    color = self._get_team_color(team)
-                    cv2.rectangle(annotated, (10, y - 15), (30, y + 3), color, -1)
-                    cv2.putText(annotated, f"{team.name}: {count}", (40, y), 
-                               self.font, self.font_scale, color, self.font_thickness)
-                    y += 25
-        
-        return annotated
+        surface_tag = f"  |  {surface.upper()}" if surface and surface != "unknown" else ""
+        lines = [
+            f"Frame: {frame_number}{surface_tag}",
+            f"Ball: {ball_speed_ms:.1f} m/s  ({ball_speed_ms * 3.6:.0f} km/h)",
+            f"Rallies: {rally_count}",
+        ]
+        y = 24
+        for line in lines:
+            cv2.putText(frame, line, (10, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1,
+                        cv2.LINE_AA)
+            y += 22
+        return frame

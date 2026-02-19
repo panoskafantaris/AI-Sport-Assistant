@@ -1,333 +1,268 @@
 """
-Main pipeline with dynamic court detection.
+Main pipeline – orchestrates all four phases per frame.
 
-1. Click court floor → set court color (one time)
-2. Click players → assign teams (3 each)
-
-Court boundaries are detected automatically each frame based on color.
+Court detection strategy (Option 3 + 4):
+  - SceneDetector fires on every histogram/SSIM cut
+  - AutoCourtDetector (Hough + colour mask) attempts auto-detection
+    and scores confidence
+  - confidence >= AUTO_THRESHOLD  → boundary stored automatically
+  - confidence <  AUTO_THRESHOLD  → CourtCalibrator popup shown to user
+  - User can confirm, skip (non-court scene), or quit
+  - All boundaries stored in CalibrationMap with JSON persistence
 """
+from __future__ import annotations
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 from tqdm import tqdm
 
-from .models import FrameData, TrackingResult, Team, TrackedObject
-from .video_loader import VideoLoader
-from .tracker import Tracker
-from .visualizer import Visualizer
-from .exporter import Exporter
-from .team_classifier import TeamClassifier, InteractiveCalibrator, CourtDetector
+from .models.frame  import FrameData, TrackingResult
+from .video.loader  import VideoLoader
+from .court import (
+    HomographyCalc, CourtCalibrator, CalibrationMode, CalibrationResult,
+    SceneDetector, AutoCourtDetector, AUTO_THRESHOLD,
+    CalibrationMap, SurfaceType,
+)
+from .players       import PlayerTracker
+from .ball          import BallDetector, TrajectoryTracker, LandingPredictor
+from .stats         import (MovementAnalyser, BallSpeedEstimator,
+                            RallyDetector, KinesiologyAnalyser)
+from .visualizer    import Visualizer
+from .exporter      import Exporter
 import config
 
 
 class Pipeline:
-    """Video processing pipeline with dynamic court detection."""
-    
+    """Full tennis analysis pipeline with scene-aware court detection."""
+
     def __init__(
         self,
-        output_dir: str = str(config.RESULTS_DIR),
-        frame_skip: int = config.DEFAULT_FRAME_SKIP,
-        save_video: bool = True,
-        save_json: bool = True,
-        show_progress: bool = True,
-        enable_team_classification: bool = True,
-        interactive_calibration: bool = False
+        output_dir:        str  = str(config.RESULTS_DIR),
+        frame_skip:        int  = config.DEFAULT_SKIP,
+        save_video:        bool = True,
+        save_json:         bool = True,
+        show_progress:     bool = True,
+        doubles:           bool = False,
+        enable_pose:       bool = False,
+        interactive_court: bool = True,
+        cal_map_path:      Optional[str] = None,
     ):
-        """Initialize pipeline."""
-        self.output_dir = Path(output_dir)
-        self.frame_skip = frame_skip
-        self.save_video = save_video
-        self.save_json = save_json
-        self.show_progress = show_progress
-        self.enable_team_classification = enable_team_classification
-        self.interactive_calibration = interactive_calibration
-        
-        # Components
-        self.tracker = Tracker()
-        self.visualizer = Visualizer()
-        self.exporter = Exporter(str(self.output_dir))
-        
-        # Calibration
-        self.team_classifier: Optional[TeamClassifier] = None
-        self.court_detector: Optional[CourtDetector] = None
-        self.calibrator: Optional[InteractiveCalibrator] = None
-        
-        if interactive_calibration:
-            self.calibrator = InteractiveCalibrator()
-    
-    def _filter_by_court(
-        self,
-        frame,
-        tracked_objects: List[TrackedObject]
-    ) -> List[TrackedObject]:
-        """Filter to only players on court (dynamic per frame)."""
-        if not self.court_detector or not self.court_detector.is_color_set:
-            return tracked_objects
-        
-        # Update court mask for this frame
-        self.court_detector.update_frame(frame)
-        
-        filtered = []
-        for obj in tracked_objects:
-            bbox = obj.bbox.to_int_tuple()
-            if self.court_detector.is_on_court(frame, bbox):
-                filtered.append(obj)
-        return filtered
-    
-    def _run_calibration(self, video_path: str) -> bool:
-        """
-        Run two-phase interactive calibration.
-        
-        Phase 1: Court calibration (full video, can restart if needed)
-        Phase 2: Team assignment (restart video)
-        """
-        print("\n" + "="*60)
-        print("INTERACTIVE CALIBRATION - TWO PHASES")
-        print("="*60)
-        print("")
-        print("PHASE 1: COURT CALIBRATION")
-        print("        LEFT-click:  Add COURT color (2pt, 3pt, paint, etc.)")
-        print("        RIGHT-click: Add OUT-OF-BOUNDS color (stands, ads, etc.)")
-        print("        → Click as many times as needed")
-        print("        → Video will play through, or press ENTER to finish early")
-        print("        → Review results, restart if not satisfied")
-        print("")
-        print("PHASE 2: TEAM ASSIGNMENT (after court is set)")
-        print("        → Video restarts from beginning")
-        print("        → Click players, press A/B/R to assign teams")
-        print("")
-        print("Press Q at any time to quit")
-        print("="*60 + "\n")
-        
-        result = None
-        
-        # Phase 1: Court calibration (can restart multiple times)
-        while True:
-            print("Starting court calibration pass...")
-            self.tracker.reset()
-            cal_loader = VideoLoader(video_path)
-            
-            with cal_loader:
-                frame_count = 0
-                total_frames = cal_loader.metadata.total_frames
-                
-                for frame_num, timestamp_ms, frame in cal_loader.frames():
-                    frame_count += 1
-                    is_last = (frame_count >= total_frames - 1)
-                    
-                    tracked_objects = self.tracker.track(frame)
-                    result = self.calibrator.update(frame, tracked_objects, is_last_frame=is_last)
-                    
-                    if result == "quit":
-                        print("Calibration cancelled")
-                        self.calibrator.cleanup()
-                        return False
-                    
-                    elif result == "restart":
-                        break  # Break inner loop to restart
-                    
-                    elif result == "phase2":
-                        break  # Break inner loop to go to phase 2
-            
-            # Decide what to do after video loop
-            if result == "restart":
-                print("Restarting video for more court samples...\n")
-                continue  # Restart outer while loop
-            elif result == "phase2":
-                break  # Exit outer loop, proceed to phase 2
-            else:
-                # Video ended without explicit action, go to review
-                pass
-        
-        # Phase 2: Team assignment
-        print("\n" + "-"*40)
-        print("PHASE 2: TEAM ASSIGNMENT")
-        print("Court calibration complete. Restarting video...")
-        print("-"*40 + "\n")
-        
-        self.tracker.reset()
-        team_loader = VideoLoader(video_path)
-        
-        with team_loader:
-            for frame_num, timestamp_ms, frame in team_loader.frames():
-                tracked_objects = self.tracker.track(frame)
-                result = self.calibrator.update(frame, tracked_objects)
-                
-                if result == "quit":
-                    print("Calibration cancelled")
-                    self.calibrator.cleanup()
-                    return False
-                
-                elif result == "complete":
-                    self._finalize_calibration()
-                    return True
-        
-        # Video ended during team assignment
-        self.calibrator.cleanup()
-        
-        if self.calibrator.is_complete():
-            self._finalize_calibration()
-            return True
-        
-        print("Calibration incomplete - not all teams assigned")
-        return False
-    
-    def _finalize_calibration(self) -> None:
-        """Save and set up components after successful calibration."""
-        print("\n" + "="*60)
-        print("CALIBRATION COMPLETE")
-        print("="*60)
-        
-        # Print court info
-        court_colors = self.calibrator.court_detector.get_court_colors()
-        oob_colors = self.calibrator.court_detector.get_oob_colors()
-        print(f"\nCourt colors ({len(court_colors)} samples):")
-        for i, rgb in enumerate(court_colors):
-            print(f"  {i+1}. RGB{rgb}")
-        
-        if oob_colors:
-            print(f"\nOut-of-bounds colors ({len(oob_colors)} samples):")
-            for i, rgb in enumerate(oob_colors):
-                print(f"  {i+1}. RGB{rgb}")
-        
-        # Print team info
-        print(f"\n{self.calibrator.color_store}")
-        print("="*60 + "\n")
-        
-        # Save
-        self.calibrator.color_store.save()
-        self.calibrator.court_detector.save()
-        
-        # Set up components
-        self.team_classifier = TeamClassifier(
-            color_store=self.calibrator.get_color_store()
-        )
-        self.court_detector = self.calibrator.get_court_detector()
-    
+        self.output_dir        = Path(output_dir)
+        self.frame_skip        = frame_skip
+        self.save_video        = save_video
+        self.save_json         = save_json
+        self.show_progress     = show_progress
+        self.doubles           = doubles
+        self.interactive_court = interactive_court
+        self.cal_map_path      = Path(cal_map_path) if cal_map_path else None
+
+        # Court
+        self._homography_calc  = HomographyCalc(doubles=doubles)
+        self._calibrator       = CourtCalibrator(doubles=doubles)
+        self._scene_detector   = SceneDetector()
+        self._auto_detector    = AutoCourtDetector()
+        self._cal_map          = CalibrationMap()
+
+        # Other phases
+        self._player_tracker  = PlayerTracker()
+        self._ball_detector   = BallDetector()
+        self._trajectory      = TrajectoryTracker()
+        self._landing         = LandingPredictor()
+        self._movement        = None   # fps-dependent, set in process()
+        self._ball_speed      = None
+        self._rally           = None
+        self._kinesiology     = KinesiologyAnalyser(enabled=enable_pose)
+        self._exporter        = Exporter(output_dir)
+
+    # ── Public entry point ────────────────────────────────────────────────────
+
     def process(
         self,
-        video_path: str,
-        max_frames: Optional[int] = None,
-        output_name: Optional[str] = None
+        video_path:  str,
+        max_frames:  Optional[int] = None,
+        output_name: Optional[str] = None,
     ) -> TrackingResult:
-        """Process video with dynamic court detection."""
-        video_loader = VideoLoader(video_path)
-        metadata = video_loader.metadata
-        
-        if output_name is None:
-            output_name = Path(video_path).stem
-        
-        # Interactive calibration
-        if self.interactive_calibration and self.enable_team_classification:
-            self.tracker.reset()
-            if not self._run_calibration(video_path):
-                print("Continuing without team classification...")
-                self.enable_team_classification = False
-            # Recreate video_loader after calibration
-            video_loader = VideoLoader(video_path)
-        elif self.enable_team_classification:
-            # Try loading saved
-            self.team_classifier = TeamClassifier()
-            self.court_detector = CourtDetector()
-            
-            if self.team_classifier.load_calibration():
-                print("Loaded team calibration")
-                print(self.team_classifier.color_store)
-            else:
-                print("No team calibration found. Use --interactive")
-                self.enable_team_classification = False
-            
-            if self.court_detector.load():
-                colors = self.court_detector.get_all_colors()
-                print(f"Loaded court ({len(colors)} color samples)")
-            else:
-                print("No court color found")
-                self.court_detector = None
-        
-        # Initialize result
-        result = TrackingResult(metadata=metadata, frames=[])
-        
-        # Video writer
-        video_writer = None
-        if self.save_video:
-            video_writer = self.exporter.create_video_writer(
-                metadata, filename=f"{output_name}_annotated.mp4"
-            )
-        
-        # Update visualizer colors
-        if self.team_classifier and self.team_classifier.is_calibrated:
-            self.visualizer.set_team_colors(self.team_classifier.team_colors)
-        
-        # Progress
-        total = metadata.total_frames // (self.frame_skip + 1)
-        if max_frames:
-            total = min(total, max_frames)
-        
-        self.tracker.reset()
-        
-        print(f"\nProcessing: {video_path}")
-        
-        with video_loader:
-            frame_iter = video_loader.frames(
-                skip=self.frame_skip,
-                max_frames=max_frames
-            )
-            
-            if self.show_progress:
-                frame_iter = tqdm(frame_iter, total=total, desc="Processing")
-            
-            for frame_num, timestamp_ms, frame in frame_iter:
-                # Track
-                tracked_objects = self.tracker.track(frame)
-                
-                # Filter by court (dynamic per frame)
-                tracked_objects = self._filter_by_court(frame, tracked_objects)
-                
-                # Classify teams
-                if self.enable_team_classification and self.team_classifier:
-                    tracked_objects = self.team_classifier.classify_frame(
-                        frame, tracked_objects
-                    )
-                
-                # Store
-                frame_data = FrameData(
-                    frame_number=frame_num,
-                    timestamp_ms=timestamp_ms,
-                    tracked_objects=tracked_objects
+
+        base = output_name or Path(video_path).stem
+        cal_path = self.cal_map_path or self.output_dir / f"{base}_calibration.json"
+
+        with VideoLoader(video_path) as loader:
+            meta = loader.metadata
+            fps  = meta.fps
+
+            self._movement   = MovementAnalyser(fps=fps)
+            self._ball_speed = BallSpeedEstimator(fps=fps)
+            self._rally      = RallyDetector(fps=fps)
+
+            # Load existing calibration map if available
+            if cal_path.exists():
+                self._cal_map.load(cal_path)
+                print(f"[Pipeline] Loaded calibration map: {cal_path}")
+            elif self.interactive_court:
+                # Initial calibration on first frame
+                first = loader.get_first_frame()
+                if first is not None:
+                    self._handle_scene_change(first, frame_number=0)
+                    self._cal_map.save(cal_path)
+
+            result = TrackingResult(metadata=meta)
+
+            writer = None
+            if self.save_video:
+                writer = self._exporter.create_video_writer(
+                    meta, filename=f"{base}_annotated.mp4"
                 )
+
+            frames_iter = loader.frames(skip=self.frame_skip, max_frames=max_frames)
+            if self.show_progress:
+                frames_iter = tqdm(frames_iter, total=meta.total_frames,
+                                   desc="Processing", unit="frames")
+
+            quit_requested = False
+            for fn, ts, frame in frames_iter:
+                # ── Scene change check ────────────────────────────────────────
+                event = self._scene_detector.update(frame, fn, ts)
+                if event is not None and self.interactive_court:
+                    print(f"\n[Scene] Change at frame {fn}  "
+                          f"({event.trigger}, diff={event.hist_diff:.2f})")
+                    quit_requested = self._handle_scene_change(frame, fn)
+                    if quit_requested:
+                        break
+                    self._cal_map.save(cal_path)
+
+                frame_data = self._process_frame(frame, fn, ts)
                 result.frames.append(frame_data)
-                
-                # Write video
-                if video_writer:
-                    annotated = frame.copy()
-                    
-                    # Draw dynamic court boundary (yellow)
-                    if self.court_detector and self.court_detector.is_color_set:
-                        annotated = self.court_detector.draw_boundary(
-                            annotated, (0, 255, 255), 2
-                        )
-                    
-                    # Draw tracks
-                    annotated = self.visualizer.draw_tracks(annotated, tracked_objects)
-                    
-                    # Draw info
-                    team_counts = None
-                    if self.team_classifier:
-                        team_counts = self.team_classifier.get_team_stats(tracked_objects)
-                    
-                    annotated = self.visualizer.draw_frame_info(
-                        annotated, frame_num, len(tracked_objects),
-                        team_counts=team_counts
-                    )
-                    
-                    video_writer.write(annotated)
-        
-        # Cleanup
-        if video_writer:
-            video_writer.release()
-            print(f"Saved: {self.output_dir}/{output_name}_annotated.mp4")
-        
+
+                if writer:
+                    writer.write(self._annotate(frame, frame_data))
+
+            if writer:
+                writer.release()
+
+        result.rallies = self._rally.completed_rallies
+
         if self.save_json:
-            self.exporter.export_json(result, f"{output_name}_tracking.json")
-            self.exporter.export_summary(result, f"{output_name}_summary.json")
-        
+            self._exporter.export_json(result, filename=f"{base}_tracking.json")
+
+        print(f"\n{self._cal_map.summary()}")
         return result
+
+    # ── Scene change handler ──────────────────────────────────────────────────
+
+    def _handle_scene_change(self, frame, frame_number: int) -> bool:
+        """
+        Try auto-detection. If confidence is low, open the calibration UI.
+        Returns True if the user requested a full quit.
+        """
+        boundary, confidence, surface = self._auto_detector.detect(frame)
+
+        surface_name = surface.surface.value if surface else "unknown"
+        print(f"[Court]  Auto-detection: surface={surface_name}  "
+              f"conf={confidence:.2f}  threshold={AUTO_THRESHOLD:.2f}")
+
+        if boundary is not None and confidence >= AUTO_THRESHOLD:
+            # Auto-accepted
+            homogr = self._homography_calc.compute(boundary)
+            self._cal_map.add_scene(
+                start_frame   = frame_number,
+                boundary      = boundary,
+                surface       = surface.surface if surface else SurfaceType.UNKNOWN,
+                confidence    = confidence,
+                auto_detected = True,
+            )
+            print(f"[Court]  Auto-accepted (conf={confidence:.2f})")
+            return False
+
+        if not self.interactive_court:
+            # Non-interactive: store whatever we got (may be None)
+            self._cal_map.add_scene(
+                start_frame   = frame_number,
+                boundary      = boundary,
+                surface       = surface.surface if surface else SurfaceType.UNKNOWN,
+                confidence    = confidence,
+                auto_detected = True,
+                is_court      = boundary is not None,
+            )
+            return False
+
+        # ── Confidence too low → show calibration UI ──────────────────────────
+        print(f"[Court]  Confidence too low → opening calibration UI")
+        cal_result, new_boundary, new_homogr = self._calibrator.run(
+            frame,
+            mode      = CalibrationMode.SCENE,
+            auto_conf = confidence,
+            surface   = surface_name,
+        )
+
+        if cal_result == CalibrationResult.QUIT:
+            return True     # signal quit to main loop
+
+        is_court = cal_result == CalibrationResult.CONFIRMED
+        self._cal_map.add_scene(
+            start_frame   = frame_number,
+            boundary      = new_boundary,
+            surface       = surface.surface if surface else SurfaceType.UNKNOWN,
+            confidence    = 1.0 if is_court else 0.0,
+            auto_detected = False,
+            is_court      = is_court,
+        )
+        return False
+
+    # ── Per-frame processing ──────────────────────────────────────────────────
+
+    def _process_frame(self, frame, fn: int, ts: float) -> FrameData:
+        fd = FrameData(frame_number=fn, timestamp_ms=ts)
+
+        # Phase 1: look up boundary for this frame from the calibration map
+        fd.court = self._cal_map.get_boundary(fn)
+        if fd.court is not None:
+            homogr = self._homography_calc.compute(fd.court)
+        else:
+            homogr = None
+        fd.homography = homogr
+
+        # Attach surface type as an extra
+        fd.extras["surface"] = self._cal_map.get_surface(fn).value
+
+        # Phase 2: players
+        players = self._player_tracker.track(frame, court=fd.court)
+        players = self._movement.update(players, homography=homogr)
+        players = self._kinesiology.analyse(frame, players)
+        fd.players = players
+
+        # Phase 3: ball
+        ball = self._ball_detector.detect(frame, frame_number=fn, timestamp_ms=ts)
+        if ball and homogr and homogr.is_ready():
+            try:
+                ball.world_x, ball.world_y = homogr.image_to_world(ball.x, ball.y)
+            except Exception:
+                pass
+        fd.ball = ball
+
+        traj = self._trajectory.update(ball)
+        fd.trajectory = traj
+        fd.landing = self._landing.predict(traj, fd.court, homogr)
+
+        # Phase 4: stats
+        speed = self._ball_speed.update(ball, homogr)
+        fd.extras["ball_speed_ms"] = round(speed, 2)
+        self._rally.update(fn, ball, speed)
+        fd.extras["rally_count"] = len(self._rally.completed_rallies)
+
+        return fd
+
+    # ── Annotation ────────────────────────────────────────────────────────────
+
+    def _annotate(self, frame, fd: FrameData):
+        out = frame.copy()
+        Visualizer.draw_court(out, fd.court)
+        Visualizer.draw_players(out, fd.players)
+        Visualizer.draw_ball(out, fd.ball)
+        Visualizer.draw_landing(out, fd.landing)
+        surface = fd.extras.get("surface", "")
+        Visualizer.draw_info(
+            out, fd.frame_number,
+            fd.extras.get("ball_speed_ms", 0.0),
+            fd.extras.get("rally_count", 0),
+            surface=surface,
+        )
+        return out

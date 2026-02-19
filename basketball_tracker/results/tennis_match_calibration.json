@@ -1,0 +1,37 @@
+{
+  "scenes": [
+    {
+      "start_frame": 0,
+      "surface": "hard",
+      "confidence": 0.978,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          98.78400421142578,
+          210.24502563476562
+        ],
+        [
+          1917.0,
+          204.34063720703125
+        ],
+        [
+          1917.0,
+          1075.06005859375
+        ],
+        [
+          204.55130004882812,
+          1069.604248046875
+        ]
+      ]
+    },
+    {
+      "start_frame": 396,
+      "surface": "clay",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    }
+  ]
+}

@@ -1,0 +1,293 @@
+{
+  "scenes": [
+    {
+      "start_frame": 0,
+      "surface": "hard",
+      "confidence": 0.979,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          98.04630279541016,
+          208.96421813964844
+        ],
+        [
+          1380.59912109375,
+          203.6680450439453
+        ],
+        [
+          1793.403076171875,
+          1073.770263671875
+        ],
+        [
+          135.63339233398438,
+          1070.986572265625
+        ]
+      ]
+    },
+    {
+      "start_frame": 613,
+      "surface": "hard",
+      "confidence": 0.831,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          305.6533203125,
+          442.1406555175781
+        ],
+        [
+          1598.3223876953125,
+          789.236083984375
+        ],
+        [
+          1743.9110107421875,
+          1014.0982055664062
+        ],
+        [
+          161.53579711914062,
+          1010.1806030273438
+        ]
+      ]
+    },
+    {
+      "start_frame": 840,
+      "surface": "hard",
+      "confidence": 0.815,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          289.49420166015625,
+          385.3196105957031
+        ],
+        [
+          1331.4698486328125,
+          348.820068359375
+        ],
+        [
+          1624.8326416015625,
+          808.0
+        ],
+        [
+          307.3829650878906,
+          808.0
+        ]
+      ]
+    },
+    {
+      "start_frame": 1088,
+      "surface": "hard",
+      "confidence": 1.0,
+      "auto_detected": false,
+      "is_court": true,
+      "corners": [
+        [
+          337.5,
+          783.0
+        ],
+        [
+          1585.5,
+          777.0
+        ],
+        [
+          1252.5,
+          243.0
+        ],
+        [
+          667.5,
+          247.5
+        ]
+      ]
+    },
+    {
+      "start_frame": 1368,
+      "surface": "hard",
+      "confidence": 0.864,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          292.7268371582031,
+          378.3734130859375
+        ],
+        [
+          1328.7554931640625,
+          368.9676818847656
+        ],
+        [
+          1769.2139892578125,
+          1050.2374267578125
+        ],
+        [
+          198.7071075439453,
+          996.8994750976562
+        ]
+      ]
+    },
+    {
+      "start_frame": 1524,
+      "surface": "hard",
+      "confidence": 0.904,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          254.34219360351562,
+          279.6930236816406
+        ],
+        [
+          1325.70458984375,
+          356.5921630859375
+        ],
+        [
+          1775.087890625,
+          1053.13623046875
+        ],
+        [
+          98.19015502929688,
+          972.2945556640625
+        ]
+      ]
+    },
+    {
+      "start_frame": 1770,
+      "surface": "hard",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    },
+    {
+      "start_frame": 1844,
+      "surface": "hard",
+      "confidence": 0.891,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          327.4119567871094,
+          458.47479248046875
+        ],
+        [
+          1261.7274169921875,
+          248.01373291015625
+        ],
+        [
+          1762.8555908203125,
+          1032.7896728515625
+        ],
+        [
+          186.84149169921875,
+          1003.0535888671875
+        ]
+      ]
+    },
+    {
+      "start_frame": 2125,
+      "surface": "hard",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    },
+    {
+      "start_frame": 2140,
+      "surface": "hard",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    },
+    {
+      "start_frame": 2155,
+      "surface": "hard",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    },
+    {
+      "start_frame": 2170,
+      "surface": "hard",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    },
+    {
+      "start_frame": 2510,
+      "surface": "hard",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    },
+    {
+      "start_frame": 2598,
+      "surface": "hard",
+      "confidence": 0.865,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          308.0903625488281,
+          359.9252624511719
+        ],
+        [
+          1321.912841796875,
+          338.19244384765625
+        ],
+        [
+          1745.0584716796875,
+          996.1254272460938
+        ],
+        [
+          198.7578125,
+          985.7672729492188
+        ]
+      ]
+    },
+    {
+      "start_frame": 2796,
+      "surface": "unknown",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    },
+    {
+      "start_frame": 2850,
+      "surface": "hard",
+      "confidence": 0.884,
+      "auto_detected": true,
+      "is_court": true,
+      "corners": [
+        [
+          264.2044677734375,
+          371.924072265625
+        ],
+        [
+          1326.4307861328125,
+          349.2539978027344
+        ],
+        [
+          1754.992431640625,
+          1017.4888916015625
+        ],
+        [
+          23.68701934814453,
+          1001.80810546875
+        ]
+      ]
+    },
+    {
+      "start_frame": 2983,
+      "surface": "grass",
+      "confidence": 0.0,
+      "auto_detected": false,
+      "is_court": false,
+      "corners": null
+    }
+  ]
+}

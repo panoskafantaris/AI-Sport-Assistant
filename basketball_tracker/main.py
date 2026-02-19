@@ -1,5 +1,10 @@
 """
-CLI entry point for basketball tracker.
+CLI entry point for Tennis Tracker.
+
+Example usage:
+    python main.py -i samples/match.mp4 --interactive
+    python main.py -i samples/match.mp4 --no-court-cal --skip 1
+    python main.py -i samples/match.mp4 --doubles --pose --max-frames 500
 """
 import argparse
 import sys
@@ -9,162 +14,86 @@ from src.pipeline import Pipeline
 import config
 
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Basketball player tracking from video",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Tennis match analysis pipeline",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    
-    parser.add_argument(
-        "--input", "-i",
-        required=True,
-        help="Path to input video file"
-    )
-    
-    parser.add_argument(
-        "--output", "-o",
-        default=str(config.RESULTS_DIR),
-        help="Output directory for results"
-    )
-    
-    parser.add_argument(
-        "--name", "-n",
-        default=None,
-        help="Base name for output files (default: input filename)"
-    )
-    
-    parser.add_argument(
-        "--skip", "-s",
-        type=int,
-        default=config.DEFAULT_FRAME_SKIP,
-        help="Frames to skip between processing (0 = process all)"
-    )
-    
-    parser.add_argument(
-        "--max-frames", "-m",
-        type=int,
-        default=None,
-        help="Maximum frames to process (default: all)"
-    )
-    
-    parser.add_argument(
-        "--no-video",
-        action="store_true",
-        help="Don't save annotated output video"
-    )
-    
-    parser.add_argument(
-        "--no-json",
-        action="store_true",
-        help="Don't save JSON tracking data"
-    )
-    
-    parser.add_argument(
-        "--quiet", "-q",
-        action="store_true",
-        help="Suppress progress bar"
-    )
-    
-    # Team classification options
-    parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Enable interactive calibration (click to identify teams/referee)"
-    )
-    
-    parser.add_argument(
-        "--no-teams",
-        action="store_true",
-        help="Disable team classification entirely"
-    )
-    
-    parser.add_argument(
-        "--load-calibration",
-        type=str,
-        default=None,
-        help="Load color calibration from file"
-    )
-    
-    return parser.parse_args()
+    p.add_argument("--input",  "-i", required=True,   help="Input video path")
+    p.add_argument("--output", "-o", default=str(config.RESULTS_DIR),
+                   help="Output directory")
+    p.add_argument("--name",   "-n", default=None,    help="Base name for output files")
+    p.add_argument("--skip",   "-s", type=int, default=config.DEFAULT_SKIP,
+                   help="Frame skip (0 = every frame)")
+    p.add_argument("--max-frames", "-m", type=int, default=None,
+                   help="Maximum frames to process")
+
+    # Modes
+    p.add_argument("--doubles",       action="store_true", help="Doubles match (4 players)")
+    p.add_argument("--pose",          action="store_true", help="Enable pose/kinesiology analysis")
+    p.add_argument("--no-court-cal",  action="store_true",
+                   help="Skip interactive court calibration (use auto-detection)")
+    p.add_argument("--cal-map", default=None,
+                   help="Path to an existing calibration map JSON to reuse")
+
+    # Output control
+    p.add_argument("--no-video", action="store_true", help="Do not save annotated video")
+    p.add_argument("--no-json",  action="store_true", help="Do not save JSON")
+    p.add_argument("--quiet",    action="store_true", help="Suppress progress bar")
+
+    return p.parse_args()
 
 
-def main():
-    """Main entry point."""
+def main() -> None:
     args = parse_args()
-    
-    # Validate input
-    input_path = Path(args.input)
-    if not input_path.exists():
-        print(f"Error: Input file not found: {args.input}")
+
+    video_path = Path(args.input)
+    if not video_path.exists():
+        print(f"[Error] File not found: {args.input}")
         sys.exit(1)
-    
-    # Create pipeline
+
     pipeline = Pipeline(
-        output_dir=args.output,
-        frame_skip=args.skip,
-        save_video=not args.no_video,
-        save_json=not args.no_json,
-        show_progress=not args.quiet,
-        enable_team_classification=not args.no_teams,
-        interactive_calibration=args.interactive
+        output_dir        = args.output,
+        frame_skip        = args.skip,
+        save_video        = not args.no_video,
+        save_json         = not args.no_json,
+        show_progress     = not args.quiet,
+        doubles           = args.doubles,
+        enable_pose       = args.pose,
+        interactive_court = not args.no_court_cal,
+        cal_map_path      = args.cal_map,
     )
-    
-    # Load existing calibration if specified
-    if args.load_calibration:
-        if pipeline.team_classifier:
-            if pipeline.team_classifier.load_calibration(args.load_calibration):
-                print(f"Loaded calibration from: {args.load_calibration}")
-            else:
-                print(f"Failed to load calibration from: {args.load_calibration}")
-    
-    # Process video
-    print(f"Processing: {args.input}")
-    print(f"Output directory: {args.output}")
-    
-    if args.interactive:
-        print("Interactive mode: You will be asked to identify players")
-    
+
+    print(f"\nTennis Tracker")
+    print(f"  Input  : {args.input}")
+    print(f"  Output : {args.output}")
+    print(f"  Mode   : {'Doubles' if args.doubles else 'Singles'}")
+    print(f"  Pose   : {'ON' if args.pose else 'OFF'}")
+
     try:
         result = pipeline.process(
-            video_path=str(input_path),
-            max_frames=args.max_frames,
-            output_name=args.name
+            video_path  = str(video_path),
+            max_frames  = args.max_frames,
+            output_name = args.name,
         )
-        
-        # Print summary
-        print("\n--- Processing Complete ---")
-        print(f"Frames processed: {len(result.frames)}")
-        
-        unique_tracks = set()
-        team_counts = {
-            "TEAM_A": 0,
-            "TEAM_B": 0,
-            "REFEREE": 0,
-            "UNKNOWN": 0
-        }
-        
-        for frame in result.frames:
-            for obj in frame.tracked_objects:
-                if obj.track_id not in unique_tracks:
-                    unique_tracks.add(obj.track_id)
-                    team_counts[obj.team.name] += 1
-        
-        print(f"Unique players tracked: {len(unique_tracks)}")
-        
-        if not args.no_teams:
-            print(f"  Team A: {team_counts['TEAM_A']}")
-            print(f"  Team B: {team_counts['TEAM_B']}")
-            print(f"  Referees: {team_counts['REFEREE']}")
-            if team_counts['UNKNOWN'] > 0:
-                print(f"  Unclassified: {team_counts['UNKNOWN']}")
-        
+
+        # ── Summary ───────────────────────────────────────────────────────────
+        total = len(result.frames)
+        unique_ids = {p.track_id for f in result.frames for p in f.players}
+        print(f"\n── Results ───────────────────────────────")
+        print(f"  Frames processed : {total}")
+        print(f"  Unique player IDs: {len(unique_ids)}")
+        print(f"  Rallies detected : {len(result.rallies)}")
+        if result.rallies:
+            fastest = max(r.max_ball_speed_ms for r in result.rallies)
+            print(f"  Fastest ball     : {fastest:.1f} m/s  ({fastest * 3.6:.0f} km/h)")
+
     except KeyboardInterrupt:
-        print("\nProcessing interrupted by user.")
+        print("\nInterrupted.")
         sys.exit(0)
     except Exception as e:
-        print(f"Error during processing: {e}")
-        sys.exit(1)
+        print(f"[Error] {e}")
+        raise
 
 
 if __name__ == "__main__":
