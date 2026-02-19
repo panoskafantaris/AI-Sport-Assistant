@@ -59,7 +59,9 @@ class Pipeline:
         self._homography_calc  = HomographyCalc(doubles=doubles)
         self._calibrator       = CourtCalibrator(doubles=doubles)
         self._scene_detector   = SceneDetector()
-        self._auto_detector    = AutoCourtDetector()
+        # self._auto_detector    = AutoCourtDetector()
+        from src.court.v2 import CourtDetectorV2
+        self._auto_detector_v2 = CourtDetectorV2(doubles=doubles, refine=True)
         self._cal_map          = CalibrationMap()
 
         # Other phases
@@ -150,63 +152,69 @@ class Pipeline:
 
     def _handle_scene_change(self, frame, frame_number: int) -> bool:
         """
-        Try auto-detection. If confidence is low, open the calibration UI.
-        Returns True if the user requested a full quit.
+        V2: Try model-fitting detection. Falls back to calibration UI
+        if confidence is below threshold.
         """
-        boundary, confidence, surface = self._auto_detector.detect(frame)
+        corners, confidence, surface = self._auto_detector_v2.detect(
+            frame, frame_number=frame_number,
+        )
 
         surface_name = surface.surface.value if surface else "unknown"
-        print(f"[Court]  Auto-detection: surface={surface_name}  "
-              f"conf={confidence:.2f}  threshold={AUTO_THRESHOLD:.2f}")
+        print(f"[Court V2]  conf={confidence:.3f}  surface={surface_name}")
+
+        boundary = None
+        if corners is not None:
+            from src.models.court import CourtBoundary
+            boundary = CourtBoundary(corners=corners, confidence=confidence)
 
         if boundary is not None and confidence >= AUTO_THRESHOLD:
-            # Auto-accepted
-            homogr = self._homography_calc.compute(boundary)
+            self._homography_calc.compute(boundary)
             self._cal_map.add_scene(
-                start_frame   = frame_number,
-                boundary      = boundary,
-                surface       = surface.surface if surface else SurfaceType.UNKNOWN,
-                confidence    = confidence,
-                auto_detected = True,
+                start_frame=frame_number,
+                boundary=boundary,
+                surface=SurfaceType(surface_name) if surface_name != "unknown"
+                        else SurfaceType.UNKNOWN,
+                confidence=confidence,
+                auto_detected=True,
             )
-            print(f"[Court]  Auto-accepted (conf={confidence:.2f})")
+            print(f"[Court V2]  Auto-accepted (conf={confidence:.3f})")
             return False
 
         if not self.interactive_court:
-            # Non-interactive: store whatever we got (may be None)
             self._cal_map.add_scene(
-                start_frame   = frame_number,
-                boundary      = boundary,
-                surface       = surface.surface if surface else SurfaceType.UNKNOWN,
-                confidence    = confidence,
-                auto_detected = True,
-                is_court      = boundary is not None,
+                start_frame=frame_number,
+                boundary=boundary,
+                surface=SurfaceType(surface_name) if surface_name != "unknown"
+                        else SurfaceType.UNKNOWN,
+                confidence=confidence,
+                auto_detected=True,
+                is_court=boundary is not None,
             )
             return False
 
-        # ── Confidence too low → show calibration UI ──────────────────────────
-        print(f"[Court]  Confidence too low → opening calibration UI")
+        # Confidence too low → show calibration UI
+        print(f"[Court V2]  Confidence too low → opening calibration UI")
         cal_result, new_boundary, new_homogr = self._calibrator.run(
             frame,
-            mode      = CalibrationMode.SCENE,
-            auto_conf = confidence,
-            surface   = surface_name,
+            mode=CalibrationMode.SCENE,
+            auto_conf=confidence,
+            surface=surface_name,
         )
 
         if cal_result == CalibrationResult.QUIT:
-            return True     # signal quit to main loop
+            return True
 
         is_court = cal_result == CalibrationResult.CONFIRMED
         self._cal_map.add_scene(
-            start_frame   = frame_number,
-            boundary      = new_boundary,
-            surface       = surface.surface if surface else SurfaceType.UNKNOWN,
-            confidence    = 1.0 if is_court else 0.0,
-            auto_detected = False,
-            is_court      = is_court,
+            start_frame=frame_number,
+            boundary=new_boundary,
+            surface=SurfaceType(surface_name) if surface_name != "unknown"
+                    else SurfaceType.UNKNOWN,
+            confidence=1.0 if is_court else 0.0,
+            auto_detected=False,
+            is_court=is_court,
         )
         return False
-
     # ── Per-frame processing ──────────────────────────────────────────────────
 
     def _process_frame(self, frame, fn: int, ts: float) -> FrameData:
