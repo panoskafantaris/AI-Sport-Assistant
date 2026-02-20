@@ -60,8 +60,8 @@ class Pipeline:
         self._calibrator       = CourtCalibrator(doubles=doubles)
         self._scene_detector   = SceneDetector()
         # self._auto_detector    = AutoCourtDetector()
-        from src.court.v2 import CourtDetectorV2
-        self._auto_detector_v2 = CourtDetectorV2(doubles=doubles, refine=True)
+        from src.court.v3 import CourtDetectorV3
+        self._auto_detector_v3 = CourtDetectorV3(doubles=doubles, refine=True)
         self._cal_map          = CalibrationMap()
 
         # Other phases
@@ -152,15 +152,15 @@ class Pipeline:
 
     def _handle_scene_change(self, frame, frame_number: int) -> bool:
         """
-        V2: Try model-fitting detection. Falls back to calibration UI
+        V3: Try model-fitting detection. Falls back to calibration UI
         if confidence is below threshold.
         """
-        corners, confidence, surface = self._auto_detector_v2.detect(
+        corners, confidence, surface = self._auto_detector_v3.detect(
             frame, frame_number=frame_number,
         )
 
         surface_name = surface.surface.value if surface else "unknown"
-        print(f"[Court V2]  conf={confidence:.3f}  surface={surface_name}")
+        print(f"[Court V3]  conf={confidence:.3f}  surface={surface_name}")
 
         boundary = None
         if corners is not None:
@@ -177,7 +177,7 @@ class Pipeline:
                 confidence=confidence,
                 auto_detected=True,
             )
-            print(f"[Court V2]  Auto-accepted (conf={confidence:.3f})")
+            print(f"[Court V3]  Auto-accepted (conf={confidence:.3f})")
             return False
 
         if not self.interactive_court:
@@ -193,7 +193,7 @@ class Pipeline:
             return False
 
         # Confidence too low → show calibration UI
-        print(f"[Court V2]  Confidence too low → opening calibration UI")
+        print(f"[Court V3]  Confidence too low → opening calibration UI")
         cal_result, new_boundary, new_homogr = self._calibrator.run(
             frame,
             mode=CalibrationMode.SCENE,

@@ -40,16 +40,6 @@ python scripts/download_sample.py -u "https://www.youtube.com/watch?v=OZz_ro54jY
 
 ## GPU Notes (RTX 4050 6 GB)
 
-The app detects and uses your GPU automatically — no extra flags needed.
-
-| Setting in config.py | Value | Effect |
-|---|---|---|
-| `DEVICE` | `"cuda"` auto-detected | All YOLO models run on GPU |
-| `USE_HALF_PRECISION` | `True` | FP16 — ~2× faster, same accuracy |
-| `DETECTION_IMG_SIZE` | `1280` | Safe for 6 GB VRAM without pose |
-
-If you see CUDA OOM errors with `--pose`, lower `DETECTION_IMG_SIZE = 960` in `config.py`.
-
 ```bash
 # Quick benchmark to confirm speed
 python models/check_gpu.py --benchmark
